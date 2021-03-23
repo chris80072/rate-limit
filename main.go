@@ -2,37 +2,79 @@ package main
 
 import (
 	"context"
-	"log"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 )
 
+type Response struct {
+	Ip      string
+	Request string
+}
+
 func main() {
-
-	// docker run -d --name myredis -p 6379:6379 redis --requirepass "mypassword"
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "mypassword", // no password set
-		DB:       0,            // use default DB
-	})
-	pong, err := rdb.Ping(context.Background()).Result()
-	if err == nil {
-		log.Println("redis 回應成功，", pong)
-	} else {
-		log.Fatal("redis 無法連線，錯誤為", err)
-	}
-
 	server := gin.Default()
 	server.GET("/", rateLimit)
 	server.Run(":8000")
 }
 
 func rateLimit(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"message": "rate limit",
-		"ip":      c.ClientIP(),
-		"times":   10,
+	var limit int64 = 60
+	r := initRedis()
+	response := &Response{Ip: c.ClientIP()}
+	now := time.Now()
+	begin := now.Add(time.Hour * (-1))
+
+	removeExpired(r, response.Ip, begin)
+	counts := getRecordCounts(r, response.Ip)
+	createRecord(r, counts, limit, response.Ip, now, begin)
+	SetResponse(counts, limit, response)
+	c.JSON(200, response)
+}
+
+func initRedis() *redis.Client {
+	return redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "mypassword",
+		DB:       0,
 	})
+}
+
+func removeExpired(r *redis.Client, ip string, begin time.Time) {
+	scoreBegin := strconv.FormatInt(begin.Unix(), 10)
+	_, err := r.ZRemRangeByScore(context.Background(), ip, "0", scoreBegin).Result()
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getRecordCounts(r *redis.Client, ip string) int64 {
+	counts, err := r.ZCard(context.Background(), ip).Result()
+	if err != nil {
+		panic(err)
+	}
+
+	return counts
+}
+
+func createRecord(r *redis.Client, counts int64, limit int64, ip string, now time.Time, begin time.Time) {
+	if counts >= limit {
+		return
+	}
+
+	err := r.ZAdd(context.Background(), ip, &redis.Z{Score: float64(now.Unix()), Member: begin}).Err()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func SetResponse(counts int64, limit int64, response *Response) {
+	if counts < limit {
+		response.Request = strconv.FormatInt(counts+1, 10)
+	} else {
+		response.Request = "Error"
+	}
 }
