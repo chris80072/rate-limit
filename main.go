@@ -17,7 +17,7 @@ type Response struct {
 func main() {
 	server := gin.Default()
 	server.GET("/", rateLimit)
-	server.Run(":8000")
+	server.Run(":8080")
 }
 
 func rateLimit(c *gin.Context) {
@@ -36,7 +36,7 @@ func rateLimit(c *gin.Context) {
 
 func initRedis() *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "redis:6379",
 		Password: "mypassword",
 		DB:       0,
 	})
