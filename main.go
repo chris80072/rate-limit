@@ -25,7 +25,7 @@ func rateLimit(c *gin.Context) {
 	r := initRedis()
 	response := &Response{Ip: c.ClientIP()}
 	now := time.Now()
-	begin := now.Add(time.Hour * (-1))
+	begin := now.Add(time.Minute * (-1))
 
 	removeExpired(r, response.Ip, begin)
 	counts := getRecordCounts(r, response.Ip)
